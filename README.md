@@ -23,6 +23,57 @@ npm install -g windscout   # or run once with: npx windscout
 
 On startup, WindScout checks npm for a newer version. Above the repository link at the bottom of the screen, it shows the installed version in grey (`windscout 0.5.6 · latest` once npm confirms nothing newer is out), or, when a newer one is out, an update notice in yellow. In the picker, press `u` to update and restart on the new version. The update runs `npm install -g windscout@latest`, with `sudo` when your global npm folder belongs to root (sudo then asks for your password). The update command is also printed after the final report.
 
+### In a sandbox (Docker)
+
+To run WindScout without installing it or Node on your computer, run it in a container. The container has its own Windscribe app (Windscribe's Linux CLI app) and, for [parallel scans](#parallel-scan-with-docker), its own docker daemon inside it (Docker-in-Docker). You need Docker: on Linux, docker itself; on macOS and Windows, [Docker Desktop](https://docs.docker.com/desktop/) (on Windows with its WSL 2 engine, set to Linux containers). Build the image once, the same way on every system. Docker fetches this repository from GitHub itself, so there's nothing to clone (add `#` and a branch, tag or commit to the URL to build that one, as in `windscout.git#main`; in a clone, use `.` in place of the URL to build your copy):
+
+```sh
+docker build -t windscout-sandbox -f sandbox/Dockerfile https://github.com/Diercohen/windscout.git
+```
+
+Then run it with the command for your system, below. If the Windscribe app on your computer is logged in, the container's app logs in with that app's session, as the [parallel scan's containers](#parallel-scan-with-docker) do: the command hands it to the container in a file mounted read-only, and the container copies only the session (`userId` and `authHash`) into its own app's settings. Without the app, or when its session doesn't work, the container asks for your Windscribe username and password (and 2FA code, if you use one), and the `windscout-home` volume keeps that login for the next runs. Then the picker opens as usual. Options after the image name go to WindScout: `windscout-sandbox -c "DE,NL" -d`. The `windscout-docker` volume keeps the inner docker's `windscout-worker` image and its containers' volumes, so only the first parallel scan builds them.
+
+**Linux:** the app's settings file is mounted as it is (read-only, never changed). Without the Windscribe app, leave out the `Windscribe2.conf` line: otherwise docker creates an empty folder in its place.
+
+```sh
+docker run -it --rm --privileged \
+  -v ~/.config/Windscribe/Windscribe2.conf:/host/Windscribe2.conf:ro \
+  -v windscout-home:/home/ws -v windscout-docker:/var/lib/docker \
+  windscout-sandbox
+```
+
+**macOS** (Terminal): the app keeps its session in its defaults, so the first line writes it to a private temporary file, which the last line deletes after the run.
+
+```sh
+s=$(mktemp) && printf '[General]\nuserId=%s\nauthHash=%s\n' "$(defaults read com.windscribe.Windscribe2 userId)" "$(defaults read com.windscribe.Windscribe2 authHash)" > "$s"
+docker run -it --rm --privileged \
+  -v "$s:/host/Windscribe2.conf:ro" \
+  -v windscout-home:/home/ws -v windscout-docker:/var/lib/docker \
+  windscout-sandbox
+rm -f "$s"
+```
+
+**Windows** (PowerShell): the app keeps its session in the registry, so the first lines write it to a private temporary file, which the last line deletes after the run.
+
+```powershell
+$k = Get-ItemProperty HKCU:\Software\Windscribe\Windscribe2
+$s = New-TemporaryFile
+Set-Content $s "[General]`nuserId=$($k.userId)`nauthHash=$($k.authHash)"
+docker run -it --rm --privileged `
+  -v "$($s.FullName):/host/Windscribe2.conf:ro" `
+  -v windscout-home:/home/ws -v windscout-docker:/var/lib/docker `
+  windscout-sandbox
+Remove-Item $s
+```
+
+Without the Windscribe app on macOS or Windows, run only the `docker run` command, without its `Windscribe2.conf` line.
+
+- `--privileged` is needed: the inner docker, and the Windscribe app's tunnel and firewall, need it. It gives the container broad control of docker's Linux kernel (on Linux, your computer's), so this isolates files and installs, not security. VPN connections stay inside the container: your computer's own connection doesn't change.
+- Docker Desktop's own Linux VM (macOS, Windows without WSL 2) can't run Windscribe's WireGuard (see the kernel check under [parallel scans](#parallel-scan-with-docker)), and in the sandbox that goes for its own app too. Windscribe's Linux app has no IKEv2, so the sandbox doesn't try it.
+- Where Docker Hub refuses (Iran), take the base image from a mirror: `docker build --build-arg BASE=registry.docker.ir/library/node:22-bookworm-slim -t windscout-sandbox -f sandbox/Dockerfile https://github.com/Diercohen/windscout.git`
+- Updating from inside (`u`) doesn't last, since each run starts fresh from the image: run the build command again instead, for the latest WindScout; add `--no-cache` to get the latest Windscribe app too.
+- To remove everything: `docker rmi windscout-sandbox` and `docker volume rm windscout-home windscout-docker`.
+
 ## Usage
 
 Run `windscout` with no arguments to open the interactive picker:
