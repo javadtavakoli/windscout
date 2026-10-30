@@ -88,7 +88,9 @@ export function pick(saved: Choice | null, { timeout, speedTest, firewall, rando
       const protoLine = PROTOCOLS.map((p, i) =>
         `${dim(under(String(i + 1)))} ${protos.has(p) ? green("● " + p) : dim("○ " + p)}`).join("   ");
       const listed = portLists && [...portLists.values()].some((l) => l.length), each = perCountry(protos);
-      const portsLine = `${dim(under("p"))} ${allPorts ? green("● all ports") : dim("○ all ports")}  ${dim(!allPorts
+      const portsLine = `${dim(under("p"))} ${allPorts ? green("● all ports") : dim("○ all ports")}  ${dim(rescan
+        ? "not used with rescan: each saved connection on its own port"
+        : !allPorts
         ? "off: each protocol on its default port"
         : !portLists ? "checking the ports…"
         : !listed ? "this Windscribe app can't list its ports: 2.22 and newer can"

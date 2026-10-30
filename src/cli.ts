@@ -55,12 +55,16 @@ const ask = (question: string) => new Promise<string | null>((resolve) => {
   rl.question(question, (a) => (resolve(a.trim()), rl.close()));
 });
 
-/** Runs a result's connect command and waits for it to connect; true once it has */
+/** Runs a result's connect command and waits for it to connect, up to the timeout; true once it has */
 async function connectTo(r: Result, timeout: number): Promise<boolean> {
   console.log(cyan(command(r)));
-  await windscribe("connect", target(r), r.protocol);
+  await windscribe("connect", "-n", target(r), r.protocol); // -n: returns right away, so the timeout here holds
   let state = "";
-  for (const t = now(); now() - t < timeout && !(state = await connectState()).startsWith("Connected");) await sleep(1000);
+  for (const t = now(); now() - t < timeout; await sleep(1000)) {
+    state = await connectState();
+    // as the scan's probe tells: connected, or given up
+    if (state.startsWith("Connected") || state.includes("does not exist") || (state === "Disconnected" && now() - t > 3)) break;
+  }
   const ok = state.startsWith("Connected");
   console.log(ok ? green(state) : yellow(`${state || "not connected"} after ${timeout} s`));
   return ok;
@@ -93,6 +97,7 @@ async function connectLast(timeout: number): Promise<void> {
     return;
   }
   await waitForLogin();
+  await windscribe("disconnect"); // a connection already up would read as the first one connecting
   for (const [i, r] of last.results.entries()) {
     console.log(`\n${i + 1}/${last.results.length} ${r.location || r.query} over ${r.protocol}`);
     if (await connectTo(r, timeout)) return;
